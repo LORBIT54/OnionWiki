@@ -249,10 +249,8 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
 
   function startBodyPhoto(sectionId) {
     if (readOnly) return
+    if (editing !== 'all' && editing !== sectionId) return
     bodySectionRef.current = sectionId
-    if (editing !== 'all' && editing !== sectionId) {
-      startSectionEdit(sectionId)
-    }
     bodyFileRef.current?.click()
   }
 
@@ -527,14 +525,16 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
                       [편집]
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="edit-section"
-                    onClick={() => startBodyPhoto(section.id)}
-                    disabled={uploadingSection === section.id}
-                  >
-                    {uploadingSection === section.id ? '[올리는 중...]' : '[사진]'}
-                  </button>
+                  {showEditor && (
+                    <button
+                      type="button"
+                      className="edit-section"
+                      onClick={() => startBodyPhoto(section.id)}
+                      disabled={uploadingSection === section.id}
+                    >
+                      {uploadingSection === section.id ? '[올리는 중...]' : '[사진]'}
+                    </button>
+                  )}
                 </span>
               )}
             </h2>

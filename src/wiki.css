@@ -270,7 +270,8 @@
 
 .body-photo {
   display: block;
-  width: 100%;
+  width: 25vw;
+  max-width: 25vw;
   margin: 12px 0;
   clear: both;
 }
@@ -279,7 +280,6 @@
   display: block;
   width: 100%;
   height: auto;
-  max-width: 100%;
 }
 
 .body-photo.is-edit {
