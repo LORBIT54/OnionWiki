@@ -40,7 +40,7 @@ function EditActions({ onDone, saving }) {
   )
 }
 
-export default function Article({ docId, isNew = false }) {
+export default function Article({ docId, isNew = false, readOnly = false, snapshot = null, savedAt = null }) {
   const navigate = useNavigate()
   const fileRef = useRef(null)
   const [tocOpen, setTocOpen] = useState(true)
@@ -56,6 +56,16 @@ export default function Article({ docId, isNew = false }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
+      if (snapshot) {
+        setDoc(snapshot)
+        setDraft(snapshot)
+        setEditing(null)
+        setModified(formatTime(savedAt))
+        setError('')
+        setNotFound(false)
+        document.title = `${snapshot.title || '기록'} - OnionWiki`
+        return
+      }
       if (isNew) {
         setDoc(EMPTY_DOC)
         setDraft(EMPTY_DOC)
@@ -93,7 +103,7 @@ export default function Article({ docId, isNew = false }) {
     return () => {
       cancelled = true
     }
-  }, [docId, isNew])
+  }, [docId, isNew, snapshot, savedAt])
 
   function startSectionEdit(id) {
     setDraft({
@@ -181,6 +191,14 @@ export default function Article({ docId, isNew = false }) {
   return (
     <article className="wiki-article">
       {error && <p className="wiki-error">{error}</p>}
+      {readOnly && (
+        <p className="wiki-hint">
+          {formatTime(savedAt)}에 저장된 기록입니다.{' '}
+          <button type="button" className="edit-section" onClick={() => navigate(`/w/${docId}`)}>
+            현재 문서로
+          </button>
+        </p>
+      )}
       {isNew && !doc.id && (
         <p className="wiki-hint">빈 템플릿입니다. 제목을 입력한 뒤 완료를 누르면 새 문서로 저장됩니다.</p>
       )}
@@ -209,6 +227,7 @@ export default function Article({ docId, isNew = false }) {
             type="button"
             className={`tool-btn${fullEdit ? ' tool-btn-active' : ''}`}
             onClick={startFullEdit}
+            disabled={readOnly}
           >
             <PencilIcon />
             편집
@@ -217,7 +236,12 @@ export default function Article({ docId, isNew = false }) {
             <ChatIcon />
             토론
           </button>
-          <button type="button" className="tool-btn" tabIndex={-1}>
+          <button
+            type="button"
+            className="tool-btn"
+            disabled={!doc.id}
+            onClick={() => doc.id && navigate(`/w/${doc.id}/history`)}
+          >
             <HistoryIcon />
             역사
           </button>
@@ -242,8 +266,8 @@ export default function Article({ docId, isNew = false }) {
                 <button
                   type="button"
                   className="photo-box"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={uploading}
+                  onClick={() => !readOnly && fileRef.current?.click()}
+                  disabled={uploading || readOnly}
                   aria-label={photoUrl ? '사진 변경' : '사진 추가'}
                 >
                   {photoUrl ? (
@@ -251,7 +275,9 @@ export default function Article({ docId, isNew = false }) {
                   ) : (
                     <span className="photo-placeholder-text">{uploading ? '올리는 중...' : '사진'}</span>
                   )}
-                  <span className="photo-overlay">{uploading ? '올리는 중...' : photoUrl ? '사진 변경' : '사진 추가'}</span>
+                  <span className="photo-overlay">
+                    {readOnly ? '기록 사진' : uploading ? '올리는 중...' : photoUrl ? '사진 변경' : '사진 추가'}
+                  </span>
                 </button>
               </td>
             </tr>
@@ -320,13 +346,13 @@ export default function Article({ docId, isNew = false }) {
                 </a>{' '}
                 {section.title}
               </span>
-              {!fullEdit && (
+              {!fullEdit && !readOnly && (
                 <button type="button" className="edit-section" onClick={() => startSectionEdit(section.id)}>
                   [편집]
                 </button>
               )}
             </h2>
-            {showEditor ? (
+            {showEditor && !readOnly ? (
               <>
                 <textarea
                   className="section-editor"
@@ -349,7 +375,7 @@ export default function Article({ docId, isNew = false }) {
         )
       })}
 
-      {fullEdit && <EditActions onDone={save} saving={saving} />}
+      {fullEdit && !readOnly && <EditActions onDone={save} saving={saving} />}
 
       <section className="license-box">
         <p>

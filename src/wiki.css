@@ -534,6 +534,52 @@
   flex-shrink: 0;
 }
 
+.history-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.history-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+  padding: 12px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.history-list a {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.history-index {
+  color: #00a495;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+}
+
+.history-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-list time {
+  color: #888;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.tool-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .toc {
   display: table;
   border: 1px solid #ccc;

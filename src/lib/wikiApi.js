@@ -86,6 +86,7 @@ export async function saveDocument(doc) {
       .select('id, updated_at')
       .single()
     if (error) throw error
+    await addRevision({ id: data.id, ...payload, photoUrl: payload.photo_url, photoPath: payload.photo_path }).catch(() => {})
     return { id: data.id, updatedAt: data.updated_at }
   }
 
@@ -95,6 +96,7 @@ export async function saveDocument(doc) {
     .select('id, updated_at')
     .single()
   if (error) throw error
+  await addRevision({ id: data.id, ...payload, photoUrl: payload.photo_url, photoPath: payload.photo_path }).catch(() => {})
   return { id: data.id, updatedAt: data.updated_at }
 }
 
@@ -114,6 +116,8 @@ export async function savePhoto(docId, photoUrl, photoPath) {
     .select('updated_at')
     .single()
   if (error) throw error
+  const { data: current } = await supabase.from('documents').select('*').eq('id', docId).maybeSingle()
+  if (current) await addRevision(normalize(current)).catch(() => {})
   return data.updated_at
 }
 
@@ -173,6 +177,53 @@ export async function listRecentDocuments() {
     .limit(100)
   if (error) throw error
   return data || []
+}
+
+export async function addRevision(doc) {
+  assertClient()
+  if (!doc?.id) return
+  const { error } = await supabase.from('document_revisions').insert({
+    document_id: doc.id,
+    title: doc.title || '',
+    infobox: doc.infobox || {},
+    bodies: doc.bodies || {},
+    photo_url: doc.photoUrl || doc.photo_url || null,
+    photo_path: doc.photoPath || doc.photo_path || null,
+  })
+  if (error) throw error
+}
+
+export async function listRevisions(documentId) {
+  assertClient()
+  const { data, error } = await supabase
+    .from('document_revisions')
+    .select('id, title, created_at')
+    .eq('document_id', documentId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
+export async function fetchRevision(revisionId) {
+  assertClient()
+  const { data, error } = await supabase.from('document_revisions').select('*').eq('id', revisionId).maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  return {
+    doc: {
+      ...normalize({
+        id: data.document_id,
+        title: data.title,
+        photo_url: data.photo_url,
+        photo_path: data.photo_path,
+        infobox: data.infobox,
+        bodies: data.bodies,
+      }),
+      id: data.document_id,
+    },
+    createdAt: data.created_at,
+    revisionId: data.id,
+  }
 }
 
 export function formatTime(iso) {
