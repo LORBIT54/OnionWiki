@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   StarIcon,
   PencilIcon,
@@ -10,6 +11,7 @@ import {
 import {
   EMPTY_DOC,
   fetchDocument,
+  formatTime,
   isSupabaseConfigured,
   saveDocument,
   savePhoto,
@@ -22,14 +24,6 @@ const SECTIONS = [
   { id: 's3', num: 3, title: '논란 및 사건사고' },
   { id: 's4', num: 4, title: '여담' },
 ]
-
-function formatTime(iso) {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '-'
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-}
 
 function WikiBody({ text }) {
   if (!text?.trim()) return <div className="section-body" />
@@ -46,29 +40,50 @@ function EditActions({ onDone, saving }) {
   )
 }
 
-export default function Article() {
+export default function Article({ docId, isNew = false }) {
+  const navigate = useNavigate()
   const fileRef = useRef(null)
   const [tocOpen, setTocOpen] = useState(true)
   const [doc, setDoc] = useState(EMPTY_DOC)
   const [modified, setModified] = useState('-')
-  const [editing, setEditing] = useState(null)
+  const [editing, setEditing] = useState(isNew ? 'all' : null)
   const [draft, setDraft] = useState(EMPTY_DOC)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     async function load() {
+      if (isNew) {
+        setDoc(EMPTY_DOC)
+        setDraft(EMPTY_DOC)
+        setEditing('all')
+        setModified('-')
+        setError('')
+        setNotFound(false)
+        document.title = '새 문서 - OnionWiki'
+        return
+      }
       if (!isSupabaseConfigured) {
         setError('Supabase 설정이 없습니다. .env.local에 URL과 anon 키를 넣어 주세요.')
         return
       }
       try {
-        const { doc: next, updatedAt } = await fetchDocument()
+        const { doc: next, updatedAt } = await fetchDocument(docId)
         if (cancelled) return
+        if (!next) {
+          setNotFound(true)
+          setError('문서를 찾을 수 없습니다.')
+          return
+        }
+        setNotFound(false)
         setDoc(next)
+        setDraft(next)
         setModified(formatTime(updatedAt))
+        setEditing(null)
+        setError('')
         document.title = next.title ? `${next.title} - OnionWiki` : 'OnionWiki'
       } catch (err) {
         if (!cancelled) setError(err.message || '문서를 불러오지 못했습니다.')
@@ -78,7 +93,7 @@ export default function Article() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [docId, isNew])
 
   function startSectionEdit(id) {
     setDraft({
@@ -106,16 +121,26 @@ export default function Article() {
     try {
       const next = {
         ...draft,
+        id: doc.id,
         photoUrl: doc.photoUrl,
         photoPath: doc.photoPath,
       }
-      const updatedAt = await saveDocument(next)
-      setDoc(next)
-      setModified(formatTime(updatedAt))
-      document.title = next.title ? `${next.title} - OnionWiki` : 'OnionWiki'
+      const result = await saveDocument(next)
+      const saved = { ...next, id: result.id, title: next.title.trim() }
+      setDoc(saved)
+      setDraft(saved)
+      setModified(formatTime(result.updatedAt))
+      document.title = `${saved.title} - OnionWiki`
       setEditing(null)
+      if (isNew || docId !== result.id) {
+        navigate(`/w/${result.id}`, { replace: true })
+      }
     } catch (err) {
-      setError(err.message || '저장에 실패했습니다.')
+      if (err.code === '23505' || /duplicate/i.test(err.message || '')) {
+        setError('같은 제목의 문서가 이미 있습니다.')
+      } else {
+        setError(err.message || '저장에 실패했습니다.')
+      }
     } finally {
       setSaving(false)
     }
@@ -128,11 +153,13 @@ export default function Article() {
     setUploading(true)
     setError('')
     try {
-      const photo = await uploadPhoto(file, doc.photoPath)
-      const updatedAt = await savePhoto(photo.photoUrl, photo.photoPath)
+      const photo = await uploadPhoto(file, doc.id, doc.photoPath)
+      if (doc.id) {
+        const updatedAt = await savePhoto(doc.id, photo.photoUrl, photo.photoPath)
+        setModified(formatTime(updatedAt))
+      }
       setDoc((prev) => ({ ...prev, ...photo }))
       setDraft((prev) => ({ ...prev, ...photo }))
-      setModified(formatTime(updatedAt))
     } catch (err) {
       setError(err.message || '사진 업로드에 실패했습니다.')
     } finally {
@@ -143,9 +170,20 @@ export default function Article() {
   const fullEdit = editing === 'all'
   const photoUrl = doc.photoUrl
 
+  if (notFound) {
+    return (
+      <article className="wiki-article">
+        <p className="wiki-error">문서를 찾을 수 없습니다.</p>
+      </article>
+    )
+  }
+
   return (
     <article className="wiki-article">
       {error && <p className="wiki-error">{error}</p>}
+      {isNew && !doc.id && (
+        <p className="wiki-hint">빈 템플릿입니다. 제목을 입력한 뒤 완료를 누르면 새 문서로 저장됩니다.</p>
+      )}
 
       <header className="article-head">
         <div className="title-wrap">

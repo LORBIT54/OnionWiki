@@ -1,18 +1,23 @@
-import Header from './components/Header'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import Layout from './components/Layout'
 import Article from './components/Article'
-import Footer from './components/Footer'
-import FloatNav from './components/FloatNav'
+import ArticlePage from './components/ArticlePage'
+import RecentPage from './components/RecentPage'
+import SearchPage from './components/SearchPage'
 import './wiki.css'
 
 export default function App() {
   return (
-    <div className="wiki-app">
-      <Header />
-      <div className="wiki-body">
-        <Article />
-      </div>
-      <Footer />
-      <FloatNav />
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Navigate to="/recent" replace />} />
+          <Route path="/recent" element={<RecentPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/new" element={<Article isNew />} />
+          <Route path="/w/:id" element={<ArticlePage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   )
 }

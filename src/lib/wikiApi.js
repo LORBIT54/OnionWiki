@@ -1,8 +1,7 @@
 import { isSupabaseConfigured, supabase } from './supabase'
 
-export const DOC_ID = 'main'
-
 export const EMPTY_DOC = {
+  id: null,
   title: '',
   photoUrl: '',
   photoPath: '',
@@ -24,6 +23,7 @@ export const EMPTY_DOC = {
 function normalize(row) {
   if (!row) return { ...EMPTY_DOC }
   return {
+    id: row.id || null,
     title: row.title || '',
     photoUrl: row.photo_url || '',
     photoPath: row.photo_path || '',
@@ -34,38 +34,75 @@ function normalize(row) {
 
 function assertClient() {
   if (!supabase) {
-    throw new Error('Supabase 환경 변수가 없습니다. .env.local에 URL과 anon 키를 넣어 주세요.')
+    throw new Error('Supabase 설정이 없습니다. .env.local에 URL과 anon 키를 넣어 주세요.')
   }
 }
 
-export async function fetchDocument() {
+function escapeIlike(value) {
+  return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')
+}
+
+export async function fetchDocument(id) {
   assertClient()
-  const { data, error } = await supabase.from('documents').select('*').eq('id', DOC_ID).maybeSingle()
+  const { data, error } = await supabase.from('documents').select('*').eq('id', id).maybeSingle()
   if (error) throw error
+  if (!data) return { doc: null, updatedAt: null }
   return {
     doc: normalize(data),
-    updatedAt: data?.updated_at || null,
+    updatedAt: data.updated_at || null,
   }
+}
+
+export async function fetchDocumentByTitle(title) {
+  assertClient()
+  const { data, error } = await supabase.from('documents').select('id, title').eq('title', title.trim()).maybeSingle()
+  if (error) throw error
+  return data
 }
 
 export async function saveDocument(doc) {
   assertClient()
+  const title = (doc.title || '').trim()
+  if (!title) {
+    const err = new Error('제목이 없으면 저장되지 않습니다.')
+    err.code = 'NO_TITLE'
+    throw err
+  }
+
   const payload = {
-    id: DOC_ID,
-    title: doc.title || '',
+    title,
     infobox: doc.infobox,
     bodies: doc.bodies,
     photo_url: doc.photoUrl || null,
     photo_path: doc.photoPath || null,
     updated_at: new Date().toISOString(),
   }
-  const { data, error } = await supabase.from('documents').upsert(payload).select('updated_at').single()
+
+  if (doc.id) {
+    const { data, error } = await supabase
+      .from('documents')
+      .update(payload)
+      .eq('id', doc.id)
+      .select('id, updated_at')
+      .single()
+    if (error) throw error
+    return { id: data.id, updatedAt: data.updated_at }
+  }
+
+  const { data, error } = await supabase
+    .from('documents')
+    .insert({ id: crypto.randomUUID(), ...payload })
+    .select('id, updated_at')
+    .single()
   if (error) throw error
-  return data.updated_at
+  return { id: data.id, updatedAt: data.updated_at }
 }
 
-export async function savePhoto(photoUrl, photoPath) {
+export async function savePhoto(docId, photoUrl, photoPath) {
   assertClient()
+  if (!docId) {
+    throw new Error('제목을 저장한 뒤에 사진을 올릴 수 있습니다.')
+  }
   const { data, error } = await supabase
     .from('documents')
     .update({
@@ -73,14 +110,14 @@ export async function savePhoto(photoUrl, photoPath) {
       photo_path: photoPath,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', DOC_ID)
+    .eq('id', docId)
     .select('updated_at')
     .single()
   if (error) throw error
   return data.updated_at
 }
 
-export async function uploadPhoto(file, previousPath) {
+export async function uploadPhoto(file, docId, previousPath) {
   assertClient()
   if (!file.type.startsWith('image/')) {
     throw new Error('이미지 파일만 올릴 수 있습니다.')
@@ -90,7 +127,8 @@ export async function uploadPhoto(file, previousPath) {
   }
 
   const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
-  const path = `${DOC_ID}/${Date.now()}.${ext}`
+  const folder = docId || 'draft'
+  const path = `${folder}/${Date.now()}.${ext}`
 
   const { error: uploadError } = await supabase.storage.from('photos').upload(path, file, {
     cacheControl: '3600',
@@ -108,6 +146,41 @@ export async function uploadPhoto(file, previousPath) {
     photoUrl: data.publicUrl,
     photoPath: path,
   }
+}
+
+export async function searchDocuments(query) {
+  assertClient()
+  const q = query.trim()
+  if (!q) return []
+  const { data, error } = await supabase
+    .from('documents')
+    .select('id, title, updated_at')
+    .neq('title', '')
+    .ilike('title', `%${escapeIlike(q)}%`)
+    .order('updated_at', { ascending: false })
+    .limit(40)
+  if (error) throw error
+  return data || []
+}
+
+export async function listRecentDocuments() {
+  assertClient()
+  const { data, error } = await supabase
+    .from('documents')
+    .select('id, title, updated_at')
+    .neq('title', '')
+    .order('updated_at', { ascending: false })
+    .limit(100)
+  if (error) throw error
+  return data || []
+}
+
+export function formatTime(iso) {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '-'
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 export { isSupabaseConfigured }

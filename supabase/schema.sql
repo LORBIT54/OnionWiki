@@ -52,3 +52,7 @@ create policy "photos_update" on storage.objects
 
 create policy "photos_delete" on storage.objects
   for delete using (bucket_id = 'photos');
+
+create unique index if not exists documents_title_unique
+  on public.documents (title)
+  where title <> '';

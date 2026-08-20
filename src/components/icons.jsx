@@ -48,6 +48,14 @@ export function GearIcon() {
   )
 }
 
+export function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="nav-icon" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function ShuffleIcon() {
   return (
     <svg viewBox="0 0 24 24" className="nav-icon" aria-hidden="true">
