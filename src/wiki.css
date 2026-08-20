@@ -221,6 +221,19 @@
   margin-bottom: 8px;
 }
 
+.wiki-text a.wiki-link {
+  color: #0275d8;
+  text-decoration: none;
+}
+
+.wiki-text a.wiki-link:hover {
+  text-decoration: underline;
+}
+
+.wiki-text a.wiki-link-missing {
+  color: #e03c31;
+}
+
 .section-editor {
   display: block;
   width: 100%;

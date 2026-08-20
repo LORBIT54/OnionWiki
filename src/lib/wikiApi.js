@@ -60,6 +60,15 @@ export async function fetchDocumentByTitle(title) {
   return data
 }
 
+export async function fetchDocumentsByTitles(titles) {
+  assertClient()
+  const unique = [...new Set((titles || []).map((title) => title.trim()).filter(Boolean))]
+  if (!unique.length) return []
+  const { data, error } = await supabase.from('documents').select('id, title').in('title', unique)
+  if (error) throw error
+  return data || []
+}
+
 export async function saveDocument(doc) {
   assertClient()
   const title = (doc.title || '').trim()

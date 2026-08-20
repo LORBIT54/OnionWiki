@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   StarIcon,
   PencilIcon,
@@ -11,12 +11,15 @@ import {
 import {
   EMPTY_DOC,
   fetchDocument,
+  fetchDocumentByTitle,
+  fetchDocumentsByTitles,
   formatTime,
   isSupabaseConfigured,
   saveDocument,
   savePhoto,
   uploadPhoto,
 } from '../lib/wikiApi'
+import { collectLinkTitles, parseWikiText } from '../lib/wikiLinks'
 
 const SECTIONS = [
   { id: 's1', num: 1, title: '개요' },
@@ -26,8 +29,83 @@ const SECTIONS = [
 ]
 
 function WikiBody({ text }) {
+  const navigate = useNavigate()
+  const parts = useMemo(() => parseWikiText(text), [text])
+  const titles = useMemo(() => collectLinkTitles(parts), [parts])
+  const titleKey = titles.join('\0')
+  const [ids, setIds] = useState({})
+  const [loaded, setLoaded] = useState(!titles.length)
+
+  useEffect(() => {
+    const lookupTitles = titleKey ? titleKey.split('\0') : []
+    let cancelled = false
+    async function load() {
+      if (!lookupTitles.length) {
+        setIds({})
+        setLoaded(true)
+        return
+      }
+      setLoaded(false)
+      if (!isSupabaseConfigured) {
+        setIds({})
+        setLoaded(true)
+        return
+      }
+      try {
+        const rows = await fetchDocumentsByTitles(lookupTitles)
+        if (cancelled) return
+        const next = {}
+        for (const title of lookupTitles) next[title] = null
+        for (const row of rows) {
+          if (row?.title) next[row.title] = row.id
+        }
+        setIds(next)
+      } catch {
+        if (!cancelled) setIds({})
+      } finally {
+        if (!cancelled) setLoaded(true)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [titleKey])
+
   if (!text?.trim()) return <div className="section-body" />
-  return <div className="section-body wiki-text">{text}</div>
+
+  async function openLink(event, title, docId) {
+    if (docId) return
+    if (loaded && title in ids) return
+    event.preventDefault()
+    try {
+      const row = await fetchDocumentByTitle(title)
+      navigate(row?.id ? `/w/${row.id}` : `/new?title=${encodeURIComponent(title)}`)
+    } catch {
+      navigate(`/new?title=${encodeURIComponent(title)}`)
+    }
+  }
+
+  return (
+    <div className="section-body wiki-text">
+      {parts.map((part, index) => {
+        if (part.type !== 'link') return <span key={index}>{part.value}</span>
+        const docId = ids[part.title]
+        const missing = loaded && !docId
+        return (
+          <Link
+            key={index}
+            to={docId ? `/w/${docId}` : `/new?title=${encodeURIComponent(part.title)}`}
+            className={`wiki-link${missing ? ' wiki-link-missing' : ''}`}
+            title={missing ? `'${part.title}' 문서 만들기` : part.title}
+            onClick={(event) => openLink(event, part.title, docId)}
+          >
+            {part.label}
+          </Link>
+        )
+      })}
+    </div>
+  )
 }
 
 function EditActions({ onDone, saving }) {
@@ -42,6 +120,8 @@ function EditActions({ onDone, saving }) {
 
 export default function Article({ docId, isNew = false, readOnly = false, snapshot = null, savedAt = null }) {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const presetTitle = isNew ? (params.get('title') || '').trim() : ''
   const fileRef = useRef(null)
   const [tocOpen, setTocOpen] = useState(true)
   const [doc, setDoc] = useState(EMPTY_DOC)
@@ -67,13 +147,14 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
         return
       }
       if (isNew) {
-        setDoc(EMPTY_DOC)
-        setDraft(EMPTY_DOC)
+        const start = { ...EMPTY_DOC, title: presetTitle }
+        setDoc(start)
+        setDraft(start)
         setEditing('all')
         setModified('-')
         setError('')
         setNotFound(false)
-        document.title = '새 문서 - OnionWiki'
+        document.title = presetTitle ? `${presetTitle} - OnionWiki` : '새 문서 - OnionWiki'
         return
       }
       if (!isSupabaseConfigured) {
@@ -103,7 +184,7 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
     return () => {
       cancelled = true
     }
-  }, [docId, isNew, snapshot, savedAt])
+  }, [docId, isNew, snapshot, savedAt, presetTitle])
 
   function startSectionEdit(id) {
     setDraft({
@@ -363,7 +444,7 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
                       bodies: { ...draft.bodies, [section.id]: e.target.value },
                     })
                   }
-                  placeholder={`${section.title} 내용을 입력하세요`}
+                  placeholder={`${section.title} 내용을 입력하세요. [문서제목]으로 다른 문서에 링크할 수 있습니다.`}
                   rows={fullEdit ? 8 : 10}
                 />
                 {isSectionEdit && <EditActions onDone={save} saving={saving} />}
