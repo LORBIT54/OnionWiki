@@ -248,6 +248,92 @@
   box-sizing: border-box;
 }
 
+.section-editor-blocks .section-editor {
+  min-height: 96px;
+  margin-bottom: 8px;
+}
+
+.text-block-wrap {
+  position: relative;
+}
+
+.line-drop-caret {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 3px;
+  background: #00a495;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.body-photo {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+  clear: both;
+}
+
+.body-photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
+
+.body-photo.is-edit {
+  margin: 8px 0;
+  cursor: grab;
+  border: 1px solid #ddd;
+  background: #fafafa;
+}
+
+.body-photo.is-held {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.body-photo-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #f6f6f6;
+  border-top: 1px solid #e5e5e5;
+  font-size: 12px;
+  color: #666;
+}
+
+.body-photo-remove {
+  border: 0;
+  background: transparent;
+  color: #b42318;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.body-photo-remove:hover {
+  text-decoration: underline;
+}
+
+.photo-drop-line {
+  height: 8px;
+  margin: 2px 0;
+  border-radius: 3px;
+}
+
+.photo-drop-line.is-active {
+  height: 4px;
+  background: #00a495;
+}
+
+.section-editor-blocks.is-dragging .section-editor {
+  outline: 1px dashed #b7e0d8;
+}
+
 .cell-input {
   width: 100%;
   border: 1px solid #ccc;
@@ -304,6 +390,17 @@
 
 .edit-section:hover {
   text-decoration: underline;
+}
+
+.section-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.section-actions .edit-section {
+  margin-left: 0;
 }
 
 .modified {

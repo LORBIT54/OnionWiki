@@ -19,7 +19,9 @@ import {
   savePhoto,
   uploadPhoto,
 } from '../lib/wikiApi'
+import { appendImage, cloneBodies, normalizeSection, pruneBodies, sectionHasContent } from '../lib/bodyBlocks'
 import { collectLinkTitles, parseWikiText } from '../lib/wikiLinks'
+import SectionEditor from './SectionEditor'
 
 const SECTIONS = [
   { id: 's1', num: 1, title: '개요' },
@@ -28,10 +30,41 @@ const SECTIONS = [
   { id: 's4', num: 4, title: '여담' },
 ]
 
-function WikiBody({ text }) {
-  const navigate = useNavigate()
+function WikiText({ text, ids, loaded, onOpenLink }) {
   const parts = useMemo(() => parseWikiText(text), [text])
-  const titles = useMemo(() => collectLinkTitles(parts), [parts])
+  if (!text) return null
+  return (
+    <div className="wiki-text">
+      {parts.map((part, index) => {
+        if (part.type !== 'link') return <span key={index}>{part.value}</span>
+        const docId = ids[part.title]
+        const missing = loaded && !docId
+        return (
+          <Link
+            key={index}
+            to={docId ? `/w/${docId}` : `/new?title=${encodeURIComponent(part.title)}`}
+            className={`wiki-link${missing ? ' wiki-link-missing' : ''}`}
+            title={missing ? `'${part.title}' 문서 만들기` : part.title}
+            onClick={(event) => onOpenLink(event, part.title, docId)}
+          >
+            {part.label}
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
+function WikiSection({ blocks }) {
+  const navigate = useNavigate()
+  const normalized = useMemo(() => normalizeSection(blocks), [blocks])
+  const titles = useMemo(() => {
+    const found = []
+    for (const block of normalized) {
+      if (block.type === 'text') found.push(...collectLinkTitles(parseWikiText(block.value)))
+    }
+    return [...new Set(found)]
+  }, [normalized])
   const titleKey = titles.join('\0')
   const [ids, setIds] = useState({})
   const [loaded, setLoaded] = useState(!titles.length)
@@ -72,8 +105,6 @@ function WikiBody({ text }) {
     }
   }, [titleKey])
 
-  if (!text?.trim()) return <div className="section-body" />
-
   async function openLink(event, title, docId) {
     if (docId) return
     if (loaded && title in ids) return
@@ -86,24 +117,19 @@ function WikiBody({ text }) {
     }
   }
 
+  if (!sectionHasContent(normalized)) return <div className="section-body" />
+
   return (
-    <div className="section-body wiki-text">
-      {parts.map((part, index) => {
-        if (part.type !== 'link') return <span key={index}>{part.value}</span>
-        const docId = ids[part.title]
-        const missing = loaded && !docId
-        return (
-          <Link
-            key={index}
-            to={docId ? `/w/${docId}` : `/new?title=${encodeURIComponent(part.title)}`}
-            className={`wiki-link${missing ? ' wiki-link-missing' : ''}`}
-            title={missing ? `'${part.title}' 문서 만들기` : part.title}
-            onClick={(event) => openLink(event, part.title, docId)}
-          >
-            {part.label}
-          </Link>
-        )
-      })}
+    <div className="section-body">
+      {normalized.map((block, index) =>
+        block.type === 'image' ? (
+          <figure key={block.id || `${block.url}-${index}`} className="body-photo">
+            <img src={block.url} alt="" />
+          </figure>
+        ) : (
+          <WikiText key={`text-${index}`} text={block.value} ids={ids} loaded={loaded} onOpenLink={openLink} />
+        ),
+      )}
     </div>
   )
 }
@@ -123,6 +149,8 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
   const [params] = useSearchParams()
   const presetTitle = isNew ? (params.get('title') || '').trim() : ''
   const fileRef = useRef(null)
+  const bodyFileRef = useRef(null)
+  const bodySectionRef = useRef(null)
   const [tocOpen, setTocOpen] = useState(true)
   const [doc, setDoc] = useState(EMPTY_DOC)
   const [modified, setModified] = useState('-')
@@ -130,6 +158,7 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
   const [draft, setDraft] = useState(EMPTY_DOC)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadingSection, setUploadingSection] = useState('')
   const [error, setError] = useState('')
   const [notFound, setNotFound] = useState(false)
 
@@ -147,7 +176,12 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
         return
       }
       if (isNew) {
-        const start = { ...EMPTY_DOC, title: presetTitle }
+        const start = {
+          ...EMPTY_DOC,
+          title: presetTitle,
+          infobox: { ...EMPTY_DOC.infobox },
+          bodies: cloneBodies(EMPTY_DOC.bodies),
+        }
         setDoc(start)
         setDraft(start)
         setEditing('all')
@@ -189,7 +223,7 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
   function startSectionEdit(id) {
     setDraft({
       ...doc,
-      bodies: { ...doc.bodies },
+      bodies: cloneBodies(doc.bodies),
       infobox: { ...doc.infobox },
     })
     setEditing(id)
@@ -199,11 +233,27 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
   function startFullEdit() {
     setDraft({
       ...doc,
-      bodies: { ...doc.bodies },
+      bodies: cloneBodies(doc.bodies),
       infobox: { ...doc.infobox },
     })
     setEditing('all')
     setError('')
+  }
+
+  function setSectionBlocks(sectionId, blocks) {
+    setDraft((prev) => ({
+      ...prev,
+      bodies: { ...prev.bodies, [sectionId]: blocks },
+    }))
+  }
+
+  function startBodyPhoto(sectionId) {
+    if (readOnly) return
+    bodySectionRef.current = sectionId
+    if (editing !== 'all' && editing !== sectionId) {
+      startSectionEdit(sectionId)
+    }
+    bodyFileRef.current?.click()
   }
 
   async function save() {
@@ -217,7 +267,12 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
         photoPath: doc.photoPath,
       }
       const result = await saveDocument(next)
-      const saved = { ...next, id: result.id, title: next.title.trim() }
+      const saved = {
+        ...next,
+        id: result.id,
+        title: next.title.trim(),
+        bodies: pruneBodies(next.bodies),
+      }
       setDoc(saved)
       setDraft(saved)
       setModified(formatTime(result.updatedAt))
@@ -258,6 +313,37 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
     }
   }
 
+  async function onBodyPhotoSelected(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    const sectionId = bodySectionRef.current
+    if (!file || !sectionId) return
+    setUploadingSection(sectionId)
+    setError('')
+    try {
+      const photo = await uploadPhoto(file, doc.id || draft.id)
+      const image = {
+        id: crypto.randomUUID(),
+        url: photo.photoUrl,
+        path: photo.photoPath,
+      }
+      setDraft((prev) => ({
+        ...prev,
+        bodies: {
+          ...prev.bodies,
+          [sectionId]: appendImage(prev.bodies[sectionId], image),
+        },
+      }))
+      if (editing !== 'all' && editing !== sectionId) {
+        setEditing(sectionId)
+      }
+    } catch (err) {
+      setError(err.message || '사진 업로드에 실패했습니다.')
+    } finally {
+      setUploadingSection('')
+    }
+  }
+
   const fullEdit = editing === 'all'
   const photoUrl = doc.photoUrl
 
@@ -283,6 +369,13 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
       {isNew && !doc.id && (
         <p className="wiki-hint">빈 템플릿입니다. 제목을 입력한 뒤 완료를 누르면 새 문서로 저장됩니다.</p>
       )}
+      <input
+        ref={bodyFileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={onBodyPhotoSelected}
+      />
 
       <header className="article-head">
         <div className="title-wrap">
@@ -427,30 +520,36 @@ export default function Article({ docId, isNew = false, readOnly = false, snapsh
                 </a>{' '}
                 {section.title}
               </span>
-              {!fullEdit && !readOnly && (
-                <button type="button" className="edit-section" onClick={() => startSectionEdit(section.id)}>
-                  [편집]
-                </button>
+              {!readOnly && (
+                <span className="section-actions">
+                  {!fullEdit && (
+                    <button type="button" className="edit-section" onClick={() => startSectionEdit(section.id)}>
+                      [편집]
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="edit-section"
+                    onClick={() => startBodyPhoto(section.id)}
+                    disabled={uploadingSection === section.id}
+                  >
+                    {uploadingSection === section.id ? '[올리는 중...]' : '[사진]'}
+                  </button>
+                </span>
               )}
             </h2>
             {showEditor && !readOnly ? (
               <>
-                <textarea
-                  className="section-editor"
-                  value={draft.bodies[section.id]}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      bodies: { ...draft.bodies, [section.id]: e.target.value },
-                    })
-                  }
+                <SectionEditor
+                  blocks={draft.bodies[section.id]}
+                  onChange={(blocks) => setSectionBlocks(section.id, blocks)}
                   placeholder={`${section.title} 내용을 입력하세요. [문서제목]으로 다른 문서에 링크할 수 있습니다.`}
-                  rows={fullEdit ? 8 : 10}
+                  compact={fullEdit}
                 />
                 {isSectionEdit && <EditActions onDone={save} saving={saving} />}
               </>
             ) : (
-              <WikiBody text={doc.bodies[section.id]} />
+              <WikiSection blocks={doc.bodies[section.id]} />
             )}
           </section>
         )

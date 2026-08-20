@@ -1,3 +1,4 @@
+import { normalizeBodies, pruneBodies } from './bodyBlocks'
 import { isSupabaseConfigured, supabase } from './supabase'
 
 export const EMPTY_DOC = {
@@ -13,10 +14,10 @@ export const EMPTY_DOC = {
     website: '',
   },
   bodies: {
-    s1: '',
-    s2: '',
-    s3: '',
-    s4: '',
+    s1: [],
+    s2: [],
+    s3: [],
+    s4: [],
   },
 }
 
@@ -28,7 +29,7 @@ function normalize(row) {
     photoUrl: row.photo_url || '',
     photoPath: row.photo_path || '',
     infobox: { ...EMPTY_DOC.infobox, ...(row.infobox || {}) },
-    bodies: { ...EMPTY_DOC.bodies, ...(row.bodies || {}) },
+    bodies: normalizeBodies({ ...EMPTY_DOC.bodies, ...(row.bodies || {}) }),
   }
 }
 
@@ -81,7 +82,7 @@ export async function saveDocument(doc) {
   const payload = {
     title,
     infobox: doc.infobox,
-    bodies: doc.bodies,
+    bodies: pruneBodies(doc.bodies),
     photo_url: doc.photoUrl || null,
     photo_path: doc.photoPath || null,
     updated_at: new Date().toISOString(),
